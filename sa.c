@@ -74,6 +74,7 @@ void formatar_disco(const char *disk_filename) {
     // Inicializa e escreve entradas do diretório	
     DirEntry empty_entry;
     memset(&empty_entry, 0, sizeof(DirEntry));
+    empty_entry.status = 0xFF; // Marcar como livre
     int dir_entries = (DIR_SECTORS * BYTES_PER_SECTOR) / sizeof(DirEntry);
     printf("Tamanho de DirEntry: %lu bytes\n", sizeof(DirEntry));
 
@@ -279,7 +280,7 @@ void copiar_para_sa(const char *disk_filename, const char *source_filename) {
     int free_entry_index = -1;
     for (int i = 0; i < dir_entries; i++) {
         // Supondo que as entradas livres tem status diferente de 0x00 (válido)
-        if (dir[i].status != 0x00) {
+        if (dir[i].status != 0xFF) {
             free_entry_index = i;
             break;
         }
@@ -362,15 +363,72 @@ void copiar_para_sa(const char *disk_filename, const char *source_filename) {
 }
 
 void copiar_para_disco(const char *disk_filename, const char *target_filename){
-    printf("Funcionalidade não implementada...\n");
+    
 }
 
 void listar_arquivos(const char *disk_filename){
-    printf("Funcionalidade não implementada...\n");
+    FILE *disk = fopen(disk_filename, "rb");
+
+    if (!disk){
+        perror("Erro ao abrir imagem do disco");
+        return;
+    }
+
+    int dir_entries = (DIR_SECTORS * BYTES_PER_SECTOR) / sizeof(DirEntry); // Calcula quantidade de entradas no diretório
+
+    // Aloca array para armazenar entradas do diretório
+    DirEntry *directory = (DirEntry *)malloc(dir_entries * sizeof(DirEntry));
+
+    if (!directory){
+        perror("Erro ao alocar memória para diretório");
+        fclose(disk);
+        return;
+    }
+
+    // Posiciona ponteiro no começo da área de diretório
+    fseek(disk, RESERVED_SECTORS * BYTES_PER_SECTOR, SEEK_SET);
+
+    // Lê entradas do diretório e armazena no array directory
+    if (fread(directory, sizeof(DirEntry), dir_entries, disk) != dir_entries){
+        perror("Erro ao ler entradas do diretório");
+        free(directory);
+        fclose(disk);
+        return;
+    }
+
+    // Cabeçalho para listagem
+    printf("\n--- Listagem de Arquivos ---\n");
+    int arquivo_encontrado = 0;
+
+    // Percorrer todas as entradas do diretório 
+    for (int i = 0; i < dir_entries; i++){
+
+        if (directory[i].status == 0x00 &&
+            directory[i].file_size > 0 &&
+            strlen(directory[i].filename) > 0 &&
+            strcmp(directory[i].filename, ".") != 0) {
+
+            arquivo_encontrado = 1;
+            printf("Arquivo %d:\n", i + 1);
+            printf("  Nome: %s.%s\n", directory[i].filename, directory[i].extension);
+            printf("  Atributos: %d\n", directory[i].attributes);
+            printf("  Setor inicial: %d\n", directory[i].first_sector);
+            printf("  Tamanho: %d bytes\n", directory[i].file_size);
+        }
+    }
+
+    if(!arquivo_encontrado){
+        printf("Nenhum arquivo encontrado no diretório\n");
+    }
+
+    // Libera memória do array directory e fecha arquivo
+    free(directory);
+    fclose(disk);
 }
 
 void remover_arquivo(const char *disk_filename, const char *filename){
     printf("Funcionalidade não implementada...\n");
+
 }
 
 int main() {
