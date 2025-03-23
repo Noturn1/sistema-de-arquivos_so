@@ -363,11 +363,119 @@ void copiar_para_sa(const char *disk_filename, const char *source_filename) {
 }
 
 void copiar_para_disco(const char *disk_filename, const char *target_filename){
-    
+    FILE *disk = fopen(disk_filename, "rb+"); // Leitura e escrita (binário)
+
+    if (!disk){
+        perror("Erro ao abrir imagem do disco");
+        return;
+    }
+
+    // Lê Boot Record (não é usado para cópia, mas para garantir que o disco está formatado)
+    BootRecord br;
+    fseek(disk, 0, SEEK_SET);
+    if (fread(&br, sizeof(BootRecord), 1, disk) != 1){
+        perror("Erro ao ler boot record");
+        fclose(disk);
+        return;
+    }
+
+    // Calcula número de entradas do diretório
+    int dir_entries = (DIR_SECTORS * BYTES_PER_SECTOR) / sizeof(DirEntry);
+
+    // Aloca array para armazenar entradas do diretório
+    DirEntry *directory = (DirEntry *)malloc(dir_entries * sizeof(DirEntry));
+    if (!directory){
+        perror("Erro ao alocar memória para diretório");
+        fclose(disk);
+        return;
+    }
+
+    // Posiciona ponteiro no começo da área de diretório e lê entradas
+    fseek(disk, RESERVED_SECTORS * BYTES_PER_SECTOR, SEEK_SET);
+
+    if (fread(directory, sizeof(DirEntry), dir_entries, disk) != (size_t)dir_entries){
+        perror("Erro ao ler entradas do diretório");
+        free(directory);
+        fclose(disk);
+        return;
+    }
+
+    // Procura por entrada cujo nome e extensão correspondam ao target_filename
+    int found_index = -1;
+    char full_name[18]; // 12 (nome) + 1 (ponto) + 4 (extensão) + 1 (terminador)
+    for (int i = 0; i < dir_entries; i++){
+        if (directory[i].status == 0x00){ // Entrada válida
+            // Concatena nome e extensão
+            if (strlen(directory[i].extension) > 0){
+                snprintf(full_name, sizeof(full_name), "%s.%s", directory[i].filename, directory[i].extension);
+            } else {
+                snprintf(full_name, sizeof(full_name), "%s", directory[i].filename);
+            }
+            if (strcmp(full_name, target_filename) == 0){
+                found_index = i;
+                break;
+            }
+        }
+    }
+
+    if (found_index == -1){
+        printf("Arquivo não encontrado no diretório\n");
+        free(directory);
+        fclose(disk);
+        return;
+    }
+
+    // Obtém dados do arquivo encontrado
+    DirEntry file_entry = directory[found_index];
+    free(directory);
+
+    // Abre arquivo de saída com mesmo nome do target_filename
+    FILE *out = fopen(target_filename, "wb");
+    if (!out){
+        perror("Erro ao abrir arquivo de saída");
+        fclose(disk);
+        return;
+    }
+
+    // Calcula quantos setores foram usados para armazenar o arquivo
+    int sectors_needed = (file_entry.file_size + BYTES_PER_SECTOR - 1) / BYTES_PER_SECTOR;
+
+    // Lê os setores do arquivo e escreve no arquivo de saída
+    int file_size_remaining = file_entry.file_size;
+
+    for (int s = 0; s < sectors_needed; s++){
+
+        int sector_num = file_entry.first_sector + s;
+        long sector_offset = sector_num * BYTES_PER_SECTOR;
+        fseek(disk, sector_offset, SEEK_SET);
+        unsigned char buffer[BYTES_PER_SECTOR];
+        size_t bytes_read = fread(buffer, 1, BYTES_PER_SECTOR, disk);
+
+        if (bytes_read != BYTES_PER_SECTOR){
+            // Se chegou ao final do arquivo, significa que foi o último setor
+            // então preenche o restante do buffer com zeros
+            if (feof(disk)){
+                memset(buffer + bytes_read, 0, BYTES_PER_SECTOR - bytes_read);
+            } else {
+                perror("Erro ao ler setor do arquivo");
+                fclose(out);
+                fclose(disk);
+                return;
+            }
+        }
+
+        int bytes_to_write = (file_size_remaining > BYTES_PER_SECTOR) ? BYTES_PER_SECTOR : file_size_remaining;
+        fwrite(buffer, 1, bytes_to_write, out);
+        file_size_remaining -= bytes_to_write;
+    }
+
+    fclose(out);
+    fclose(disk);
+    printf("Arquivo copiado para o sistema com sucesso!\n");
 }
 
 void listar_arquivos(const char *disk_filename){
-    FILE *disk = fopen(disk_filename, "rb");
+    FILE *disk = fopen(disk_filename, "rb"); // Leitura (binário)
 
     if (!disk){
         perror("Erro ao abrir imagem do disco");
