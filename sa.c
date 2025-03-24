@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <errno.h>
 
 // Define os valores de acordo com a especificação 
 #define BYTES_PER_SECTOR 512
@@ -14,7 +15,7 @@
 // Define a estrutura do boot record e entrada do diretório
 typedef struct {
     unsigned short bytes_por_sector;   // 2 bytes
-    unsigned char sectors_per_block;   // 1 byte ###
+    unsigned char sectors_per_block;   // 1 byte 
     unsigned short reserved_sectors;   // 2 bytes
     unsigned short dir_sectors;        // 2 bytes
     unsigned short data_sectors;       // 2 bytes
@@ -25,7 +26,7 @@ typedef struct {
     char reserved[10];                 // 10 bytes 
 } BootRecord;
 
-typedef struct {
+typedef struct __attribute__((packed)) {
     unsigned char status;      // 1 byte: 0x00 para válido, 0xFF para deletado
     char filename[12];         // 12 bytes para o nome do arquivo
     char extension[4];         // 4 bytes para a extensão
@@ -35,20 +36,7 @@ typedef struct {
     char reserved[6];          // 6 bytes reservados para futuras expansões
 } DirEntry;
 
-// Protótipos das funções ## para teste
-void formatar_disco(const char *disk_filename);
-void copiar_para_sa(const char *disk_filename, const char *source_filename);
-void copiar_para_disco(const char *disk_filename, const char *target_filename);
-void listar_arquivos(const char *disk_filename);
-void remover_arquivo(const char *disk_filename, const char *filename);
-
 void formatar_disco(const char *disk_filename) {
-    if (strcmp(disk_filename, "sa.c") == 0) {
-        printf("Erro: Tentativa de sobrescrever um arquivo crítico!\n");
-        return;
-    }
-
-    
     FILE *disk = fopen(disk_filename, "wb");
     
     if(!disk) {
@@ -71,15 +59,26 @@ void formatar_disco(const char *disk_filename) {
     // Escreve o boot record no disco
     fwrite(&br, sizeof(BootRecord), 1, disk);
 
+    // Preenche setores reservados com zeros ###
+    size_t boot_record_size = sizeof(BootRecord);
+    size_t padding_size = BYTES_PER_SECTOR - boot_record_size;
+    unsigned char padding[BYTES_PER_SECTOR];
+    memset(padding, 0, BYTES_PER_SECTOR);
+    fwrite(padding, padding_size, 1,  disk);
+
     // Inicializa e escreve entradas do diretório	
     DirEntry empty_entry;
     memset(&empty_entry, 0, sizeof(DirEntry));
     empty_entry.status = 0xFF; // Marcar como livre
     int dir_entries = (DIR_SECTORS * BYTES_PER_SECTOR) / sizeof(DirEntry);
-    printf("Tamanho de DirEntry: %lu bytes\n", sizeof(DirEntry));
+    printf("Size of DirEntry: %lu\n", sizeof(DirEntry));
 
     for(int i = 0; i < dir_entries; i++) {
-        fwrite(&empty_entry, sizeof(DirEntry), 1, disk);
+        size_t written = fwrite(&empty_entry, sizeof(DirEntry), 1, disk);
+        if (written != 1) {
+        printf("Erro ao escrever entrada %d do diretório, fwrite returned %zu, errno: %s\n", 
+               i, written, strerror(errno));
+        }
     }
 
     // Inicializa e escreve o bitmap
@@ -280,7 +279,7 @@ void copiar_para_sa(const char *disk_filename, const char *source_filename) {
     int free_entry_index = -1;
     for (int i = 0; i < dir_entries; i++) {
         // Supondo que as entradas livres tem status diferente de 0x00 (válido)
-        if (dir[i].status != 0xFF) {
+        if (dir[i].status == 0xFF) {
             free_entry_index = i;
             break;
         }
@@ -529,14 +528,169 @@ void listar_arquivos(const char *disk_filename){
         printf("Nenhum arquivo encontrado no diretório\n");
     }
 
+    for (int i = 0; i < dir_entries; i++) {
+        printf("Entrada %d - Status: 0x%02X, Nome: %s.%s, Setor Inicial: %d, Tamanho: %d bytes\n",
+               i, directory[i].status, directory[i].filename, directory[i].extension, 
+               directory[i].first_sector, directory[i].file_size);
+        }
+
     // Libera memória do array directory e fecha arquivo
     free(directory);
     fclose(disk);
+
+    
 }
 
 void remover_arquivo(const char *disk_filename, const char *filename){
-    printf("Funcionalidade não implementada...\n");
+    FILE *disk = fopen(disk_filename, "rb+"); // Leitura e escrita (binário)
 
+    if (!disk){
+        perror("Erro ao abrir imagem do disco");
+        return;
+    }
+
+    // Lê Boot Record 
+    BootRecord br;
+    fseek(disk, 0, SEEK_SET);
+    if (fread(&br, sizeof(BootRecord), 1, disk) != 1){
+        perror("Erro ao ler boot record");
+        fclose(disk);
+        return;
+    }
+
+    // Calcula número de entradas do diretório
+    int dir_entries = (DIR_SECTORS * BYTES_PER_SECTOR) / sizeof(DirEntry);
+
+    // Aloca memória para ler entradas do diretório
+    DirEntry *directory = (DirEntry *)malloc(dir_entries * sizeof(DirEntry));
+    if (!directory){
+        perror("Erro ao alocar memória para diretório");
+        fclose(disk);
+        return;
+    }
+
+    // Posiciona ponteiro no começo da área de diretório e lê entradas
+    fseek(disk, RESERVED_SECTORS * BYTES_PER_SECTOR, SEEK_SET);
+    if (fread(directory, sizeof(DirEntry), dir_entries, disk) != (size_t)dir_entries){
+        perror("Erro ao ler entradas do diretório");
+        free(directory);
+        fclose(disk);
+        return;
+    }
+
+    // Procura por entrada cujo nome e extensão correspondam ao filename
+    int found_index = -1;
+    char full_name[18]; // 12 (nome) + 1 (ponto) + 4 (extensão) + 1 (terminador)
+
+    for (int i = 0; i < dir_entries; i++){
+        if (directory[i].status == 0x00){ // Entrada válida
+            // Concatena nome e extensão
+            if (directory[i].status == 0x00){ // Entrada válida
+                // Concatena nome e extensão
+                if (strlen(directory[i].extension) > 0){
+                    snprintf(full_name, sizeof(full_name), "%s.%s", directory[i].filename, directory[i].extension);
+                } else {
+                    snprintf(full_name, sizeof(full_name), "%s", directory[i].filename);
+                }
+                if (strcmp(full_name, filename) == 0){
+                    found_index = i;
+                    break;
+                }
+            }
+        }
+    }
+
+    if (found_index == -1){
+        printf("Arquivo não encontrado no diretório\n");
+        free(directory);
+        fclose(disk);
+        return;
+    }
+
+    // Obtém entrada correspondente ao arquivo encontrado
+    DirEntry file_entry = directory[found_index];
+
+    // Calcula quantidade de setores utilizados (arredonda para cima)
+    int sectors_needed = (file_entry.file_size + BYTES_PER_SECTOR - 1) / BYTES_PER_SECTOR;
+
+    // Lê o Bitmap
+    int bitmap_size = BITMAP_SECTORS * BYTES_PER_SECTOR;
+    unsigned char *bitmap = (unsigned char *)malloc(bitmap_size);
+
+    if (!bitmap){
+        perror("Erro ao alocar memória para bitmap");
+        free(directory);
+        fclose(disk);
+        return;
+    }
+
+    fseek(disk, (RESERVED_SECTORS + DIR_SECTORS) * BYTES_PER_SECTOR, SEEK_SET);
+    if (fread(bitmap, sizeof(unsigned char), bitmap_size, disk) != (size_t)bitmap_size){
+        perror("Erro ao ler bitmap");
+        free(bitmap);
+        free(directory);
+        fclose(disk);
+        return;
+    }
+
+    // Libera os setores alocados no bitmap, limpando os bits correspondentes
+    for (int i = 0; i < sectors_needed; i++){
+        int sector = file_entry.first_sector + i;
+        int byte_index = sector / 8;
+        int bit_index = sector % 8;
+        bitmap[byte_index] &= ~(1 << bit_index); // Limpa o bit (define como 0)
+    }
+
+    // Marca entrada do diretório como deletada
+    directory[found_index].status = 0xFF;
+    memset(directory[found_index].filename, 0, sizeof(directory[found_index].filename));
+    memset(directory[found_index].extension, 0, sizeof(directory[found_index].extension));
+    directory[found_index].attributes = 0;
+    directory[found_index].first_sector = 0;
+    directory[found_index].file_size = 0;
+    memset(directory[found_index].reserved, 0, sizeof(directory[found_index].reserved));
+
+    // Atualiza o boot record
+    if (br.file_count > 0){
+        br.file_count--;
+    }
+
+    // Reescreve o boot record no início do disco
+    fseek(disk, 0, SEEK_SET);
+    if (fwrite(&br, sizeof(BootRecord), 1, disk) != 1){
+        perror("Erro ao atualizar boot record");
+        free(bitmap);
+        free(directory);
+        fclose(disk);
+        return;
+    }
+
+    // Reescreve o diretório
+    fseek(disk, RESERVED_SECTORS * BYTES_PER_SECTOR, SEEK_SET);
+    if (fwrite(directory, sizeof(DirEntry), dir_entries, disk) != (size_t)dir_entries){
+        perror("Erro ao atualizar diretório");
+        free(bitmap);
+        free(directory);
+        fclose(disk);
+        return;
+    }
+
+    // Reescreve o bitmap
+    fseek(disk, (RESERVED_SECTORS + DIR_SECTORS) * BYTES_PER_SECTOR, SEEK_SET);
+    if (fwrite(bitmap, sizeof(unsigned char), bitmap_size, disk) != (size_t)bitmap_size){
+        perror("Erro ao atualizar bitmap");
+        free(bitmap);
+        free(directory);
+        fclose(disk);
+        return;
+    }
+
+    // Libera recursos alocados
+    free(bitmap);
+    free(directory);
+    fclose(disk);
+
+    printf("Arquivo '%s' removido com sucesso!\n", filename);
 }
 
 int main() {
@@ -551,7 +705,6 @@ int main() {
         printf("3. Copiar arquivo do sistema para o disco\n");
         printf("4. Listar arquivos\n");
         printf("5. Remover arquivo\n");
-        printf("6. Exibir disco\n");
         printf("0. Sair\n");
         printf("Escolha uma opção: ");
         scanf("%d", &opcao);

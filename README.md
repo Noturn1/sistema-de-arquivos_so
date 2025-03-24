@@ -1,47 +1,49 @@
-# Sistema de Arquivos - Trabalho de Sistemas Operacionais
+# Sistema de Arquivos - Trabalho SO
 
-Este projeto implementa um sistema de arquivos simples em C, desenvolvido como parte de um trabalho para a disciplina de Sistemas Operacionais. O sistema de arquivos simula operações básicas de gerenciamento de arquivos em um disco virtual.
+Este projeto implementa um sistema de arquivos simples em C, simulando um disco armazenado em um arquivo (disco.img).
 
-## Estrutura do Projeto
+## Estrutura do Disco
 
-- **`sistema-de-arquivos.c`**: Contém a implementação principal do sistema de arquivos, incluindo as funções para formatação do disco, manipulação de arquivos e o menu interativo.
-- **`disco.img`**: Arquivo que simula o disco virtual (gerado durante a execução do programa).
-- **`LICENSE`**: Arquivo de licença do projeto.
-- **`README.md`**: Este arquivo, contendo informações sobre o projeto.
+- **Boot Record:** Contém informações sobre o layout do disco, incluindo bytes por setor, setores por bloco, quantidade de setores reservados, diretório, bitmap e dados.  
+- **Diretório:** Array de entradas (DirEntry) armazenando metadados de arquivos (nome, extensão, status, setor inicial, tamanho, etc).
+- **Bitmap:** Gerencia a alocação dos setores de dados.
+- **Área de Dados:** Espaço onde os arquivos são armazenados.
 
-## Funcionalidades Implementadas
+## Funcionalidades
 
-1. **Formatação do Disco**:
-   - Cria um disco virtual (`disco.img`) com as seguintes características:
-     - Setores de 512 bytes.
-     - 8 setores por bloco.
-     - 1 setor reservado.
-     - 1 setor para o diretório.
-     - 2 setores para o bitmap.
-     - 196 setores para dados.
-   - Inicializa o boot record, o diretório, o bitmap e a área de dados.
+- **Formatar Disco:** Cria a imagem do disco (`disco.img`), inicializando o Boot Record, diretório, bitmap e área de dados.
+- **Copiar Arquivo do Sistema para o Disco:** Lê um arquivo fonte e o armazena no disco, atualizando o diretório e o bitmap.
+- **Copiar Arquivo do Disco para o Sistema:** Lê um arquivo presente no disco a partir do diretório e o salva no sistema.
+- **Listar Arquivos:** Exibe as entradas do diretório, mostrando informações dos arquivos armazenados.
+- **Remover Arquivo:** Remove um arquivo do disco, liberando os setores correspondentes no bitmap e atualizando o diretório e o Boot Record.
+- **Exibir Disco:** Exibe o conteúdo completo do disco, incluindo Boot Record, diretório e bitmap.
 
-2. **Menu Interativo**:
-   - O programa apresenta um menu com as seguintes opções:
-     1. Formatar disco.
-     2. Copiar arquivo do disco para o sistema (não implementado).
-     3. Copiar arquivo do sistema para o disco (não implementado).
-     4. Listar arquivos no disco (não implementado).
-     5. Remover arquivo do disco (não implementado).
-     0. Sair.
+## Uso
 
-3. **Estruturas de Dados**:
-   - **Boot Record**:
-     - Contém informações sobre o sistema de arquivos, como tamanho dos setores, número de setores reservados, bitmap, diretório e dados.
-   - **Entrada de Diretório**:
-     - Representa os arquivos armazenados no disco, com informações como nome, extensão, tamanho e setor inicial.
+Execute o programa e escolha a opção desejada no menu interativo:
 
-## Como Executar
+1. Formatar disco  
+2. Copiar arquivo do disco para o sistema  
+3. Copiar arquivo do sistema para o disco  
+4. Listar arquivos  
+5. Remover arquivo  
+6. Exibir disco  
+0. Sair
 
-1. Compile o programa:
-   ```bash
-   gcc sistema-de-arquivos.c -o sistema-de-arquivos
+O projeto utiliza funções da biblioteca padrão C para manipulação de arquivos, com tratamento básico de erros e mensagens informativas.
 
-2. Execute o programa:
-    ```bash
-    ./sistema-de-arquivos
+## Compilação
+
+```bash
+gcc sa.c -o sa
+```
+
+## Execução
+
+```bash
+./sa
+```
+
+## Licença
+
+Este projeto é licenciado sob a [MIT License](LICENSE).
