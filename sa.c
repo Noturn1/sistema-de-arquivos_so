@@ -71,7 +71,6 @@ void formatar_disco(const char *disk_filename) {
     memset(&empty_entry, 0, sizeof(DirEntry));
     empty_entry.status = 0xFF; // Marcar como livre
     int dir_entries = (DIR_SECTORS * BYTES_PER_SECTOR) / sizeof(DirEntry);
-    printf("Size of DirEntry: %lu\n", sizeof(DirEntry));
 
     for(int i = 0; i < dir_entries; i++) {
         size_t written = fwrite(&empty_entry, sizeof(DirEntry), 1, disk);
@@ -527,13 +526,7 @@ void listar_arquivos(const char *disk_filename){
     if(!arquivo_encontrado){
         printf("Nenhum arquivo encontrado no diretório\n");
     }
-
-    for (int i = 0; i < dir_entries; i++) {
-        printf("Entrada %d - Status: 0x%02X, Nome: %s.%s, Setor Inicial: %d, Tamanho: %d bytes\n",
-               i, directory[i].status, directory[i].filename, directory[i].extension, 
-               directory[i].first_sector, directory[i].file_size);
-        }
-
+    
     // Libera memória do array directory e fecha arquivo
     free(directory);
     fclose(disk);
